@@ -4,6 +4,10 @@ A complete, lightweight Flappy Bird style game written in Rust with macroquad. T
 
 [![Deploy GitHub Pages](https://github.com/<your-username>/<your-repo>/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/<your-username>/<your-repo>/actions/workflows/deploy-pages.yml)
 
+## Demo Webapp
+
+- https://fred-vu.github.io/flappy-rust/
+
 ## Setup
 
 Requirements:
@@ -71,8 +75,8 @@ python3 -m http.server 8080 -d dist
 2. In repository settings, open `Pages` and ensure source uses `GitHub Actions`.
 3. Keep workflow file at `.github/workflows/deploy-pages.yml`.
 4. Push to `main` (or run `workflow_dispatch`) to publish.
-5. Your site URL will be:
-   - `https://<your-username>.github.io/<your-repo>/`
+5. Live demo URL:
+   - `https://fred-vu.github.io/flappy-rust/`
 
 ## Architecture Notes
 
