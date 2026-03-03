@@ -1,0 +1,34 @@
+{
+  "branchName": "feat/flappy-retro-incremental",
+  "name": "Rust Flappy Bird Phase 3 - Incremental Retro Visuals",
+  "userStories": [
+    {
+      "dependsOn": [],
+      "description": "Implement cheerful looping background music with retro/chiptune Game Boy style generated in-code. Integrate with existing audio architecture and mute toggle so M key mutes both SFX and background music. Keep safe fallback if music fails to initialize.",
+      "id": "US-601",
+      "passes": true,
+      "priority": 1,
+      "title": "Add looping retro Game Boy style background music"
+    },
+    {
+      "dependsOn": [
+        "US-601"
+      ],
+      "description": "Adjust sprite transform/orientation so the paper plane clearly faces right while still tilting naturally with vertical movement. It must never appear left-facing or mirrored in gameplay.",
+      "id": "US-602",
+      "passes": true,
+      "priority": 2,
+      "title": "Refine paper plane to clearly face right"
+    },
+    {
+      "dependsOn": [
+        "US-602"
+      ],
+      "description": "Replace flat pipe rectangles with pixel-art style pipes (cap/body segmentation/shading/highlights) while keeping collision geometry unchanged. Update README features section to include retro BGM and pixel-art pipes. Ensure cargo check and cargo test pass.",
+      "id": "US-603",
+      "passes": true,
+      "priority": 3,
+      "title": "Render pipes in pixel-art style and finalize docs"
+    }
+  ]
+}

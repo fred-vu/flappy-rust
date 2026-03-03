@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flappy Rust</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #0b1020;
+        color: #e2e8f0;
+        font-family: "Segoe UI", Roboto, system-ui, -apple-system, sans-serif;
+        min-height: 100%;
+      }
+
+      .shell {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        gap: 16px;
+        padding: 20px;
+        box-sizing: border-box;
+      }
+
+      #glcanvas {
+        width: min(100vw - 32px, 480px);
+        height: min((100vw - 32px) * 1.3333, 640px);
+        max-height: calc(100vh - 120px);
+        border: 2px solid #334155;
+        border-radius: 10px;
+        image-rendering: pixelated;
+        background: #0f172a;
+      }
+
+      .hint {
+        font-size: 14px;
+        opacity: 0.88;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <canvas id="glcanvas" tabindex="1"></canvas>
+      <div class="hint">
+        Space/Up/Click: Flap · P: Pause · M: Mute · R: Restart
+      </div>
+    </main>
+
+    <script src="https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js"></script>
+    <script>
+      load("flappy_rust.wasm");
+      window.addEventListener("load", () => {
+        const canvas = document.getElementById("glcanvas");
+        if (canvas) canvas.focus();
+      });
+    </script>
+  </body>
+</html>
