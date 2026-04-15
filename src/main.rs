@@ -1,6 +1,6 @@
 mod audio;
 mod game;
-mod physics;
+mod high_score;
 
 use game::SCREEN_H;
 use game::SCREEN_W;
@@ -22,7 +22,7 @@ async fn main() {
     let mut game = game::Game::new(audio);
 
     loop {
-        let dt = get_frame_time();
+        let dt = get_frame_time().min(0.05);
         game.update(dt);
         game.draw();
         next_frame().await;

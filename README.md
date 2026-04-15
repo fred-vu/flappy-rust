@@ -2,7 +2,7 @@
 
 A complete, lightweight Flappy Bird style game written in Rust with macroquad. The game includes gravity and flap input, moving pipes, collision detection, scoring, game over, and restart, plus modern extras like a pixel-art paper plane, audio cues, collectibles, combo/flow bonuses, and temporary power-ups.
 
-[![Deploy GitHub Pages](https://github.com/<your-username>/<your-repo>/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/<your-username>/<your-repo>/actions/workflows/deploy-pages.yml)
+[![Deploy GitHub Pages](https://github.com/fred-vu/flappy-rust/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/fred-vu/flappy-rust/actions/workflows/deploy-pages.yml)
 
 ## Demo Webapp
 
@@ -12,6 +12,13 @@ A complete, lightweight Flappy Bird style game written in Rust with macroquad. T
 
 Requirements:
 - Rust toolchain (stable)
+- Linux native builds/runs with audio: ALSA development headers
+
+Ubuntu/Debian:
+
+```bash
+sudo apt-get install libasound2-dev
+```
 
 Run the game:
 
@@ -31,6 +38,8 @@ Run tests:
 ```bash
 cargo test
 ```
+
+Unit tests cover pure helper logic and do not require the native audio backend.
 
 Validate build in headless environments:
 
@@ -62,6 +71,8 @@ python3 -m http.server 8080 -d dist
 - Pause/resume and mute toggles with in-game HUD hints.
 - Collectibles: stars (combo scoring), feathers (low gravity), shields (one-hit protection), boost orbs (score multiplier).
 - Flow system: perfect gap passes build Flow for bonus points; close calls score extra.
+- Persistent high score, end-run medals, and new-best callouts.
+- Score popups, particle bursts, and impact flashes for stronger feedback.
 - Modern visuals: sky day/night cycle, parallax ground, clouds, and boost speed lines.
 
 ## Open Source

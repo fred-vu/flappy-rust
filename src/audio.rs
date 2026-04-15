@@ -1,5 +1,5 @@
 use macroquad::audio::{
-    load_sound_from_bytes, play_sound, set_sound_volume, stop_sound, PlaySoundParams, Sound,
+    PlaySoundParams, Sound, load_sound_from_bytes, play_sound, set_sound_volume, stop_sound,
 };
 use std::f32::consts::PI;
 
@@ -218,7 +218,7 @@ fn square_wave(freq: f32, t: f32, duty: f32) -> f32 {
 
 fn append_silence(samples: &mut Vec<i16>, duration: f32) {
     let silence_samples = (duration * SAMPLE_RATE as f32).ceil() as usize;
-    samples.extend(std::iter::repeat(0).take(silence_samples));
+    samples.extend(std::iter::repeat_n(0i16, silence_samples));
 }
 
 fn build_wav(samples: &[i16], sample_rate: u32) -> Vec<u8> {

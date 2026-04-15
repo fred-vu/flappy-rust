@@ -3,5 +3,10 @@ name = "flappy_rust"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "flappy_rust"
+path = "src/main.rs"
+test = false
+
 [dependencies]
 macroquad = { version = "0.4", features = ["audio"] }

@@ -1,10 +1,22 @@
-use macroquad::prelude::*;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RectBounds {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
 
-pub fn circle_rect_collision(circle: Vec2, radius: f32, rect: Rect) -> bool {
-    let closest_x = clamp(circle.x, rect.x, rect.x + rect.w);
-    let closest_y = clamp(circle.y, rect.y, rect.y + rect.h);
-    let dx = circle.x - closest_x;
-    let dy = circle.y - closest_y;
+impl RectBounds {
+    pub const fn new(x: f32, y: f32, w: f32, h: f32) -> Self {
+        Self { x, y, w, h }
+    }
+}
+
+pub fn circle_rect_collision(circle_x: f32, circle_y: f32, radius: f32, rect: RectBounds) -> bool {
+    let closest_x = clamp(circle_x, rect.x, rect.x + rect.w);
+    let closest_y = clamp(circle_y, rect.y, rect.y + rect.h);
+    let dx = circle_x - closest_x;
+    let dy = circle_y - closest_y;
     (dx * dx + dy * dy) <= radius * radius
 }
 
@@ -24,16 +36,14 @@ mod tests {
 
     #[test]
     fn circle_rect_collision_detects_overlap() {
-        let rect = Rect::new(10.0, 10.0, 20.0, 20.0);
-        let circle = vec2(18.0, 18.0);
-        assert!(circle_rect_collision(circle, 6.0, rect));
+        let rect = RectBounds::new(10.0, 10.0, 20.0, 20.0);
+        assert!(circle_rect_collision(18.0, 18.0, 6.0, rect));
     }
 
     #[test]
     fn circle_rect_collision_detects_separation() {
-        let rect = Rect::new(10.0, 10.0, 20.0, 20.0);
-        let circle = vec2(0.0, 0.0);
-        assert!(!circle_rect_collision(circle, 3.0, rect));
+        let rect = RectBounds::new(10.0, 10.0, 20.0, 20.0);
+        assert!(!circle_rect_collision(0.0, 0.0, 3.0, rect));
     }
 
     #[test]

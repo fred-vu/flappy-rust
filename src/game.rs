@@ -1,5 +1,6 @@
 use crate::audio::AudioBank;
-use crate::physics;
+use crate::high_score;
+use flappy_rust::physics::{self, RectBounds};
 use macroquad::prelude::*;
 use macroquad::rand;
 
@@ -68,6 +69,10 @@ const CLOSE_MARGIN: f32 = 18.0;
 const CLOSE_BONUS: u32 = 1;
 const CLOSE_FLASH_DURATION: f32 = 0.7;
 const CLOUD_COUNT: usize = 6;
+const SCORE_POPUP_DURATION: f32 = 0.95;
+const PARTICLE_DURATION: f32 = 0.55;
+const IMPACT_FLASH_DURATION: f32 = 0.35;
+const SCREEN_SHAKE_DURATION: f32 = 0.28;
 
 const PLANE_PIXEL_SIZE: f32 = 2.0;
 const PLANE_WIDTH: usize = 12;
@@ -76,13 +81,13 @@ const PIPE_PIXEL_SIZE: f32 = 5.0;
 const PIPE_CAP_ROWS: i32 = 3;
 const PIPE_CAP_OVERHANG: f32 = 7.0;
 const PLANE_PIXEL_MAP: [&str; PLANE_HEIGHT] = [
-    "...........l",
-    ".........lll",
-    "......llllll",
-    "..llleeeeeee",
-    "...dddddddd.",
-    ".....dddddd.",
-    ".......ddd..",
+    "lll.........",
+    "..llll......",
+    "....lllll...",
+    "eeeeeeeeeeee",
+    "....dddddd..",
+    "..dddd......",
+    "ddd.........",
 ];
 
 #[derive(Clone)]
@@ -139,13 +144,43 @@ struct Cloud {
     scale: f32,
 }
 
+struct ScoreBurst {
+    position: Vec2,
+    text: String,
+    color: Color,
+    particles: usize,
+}
+
+struct ScorePopup {
+    position: Vec2,
+    velocity: Vec2,
+    timer: f32,
+    duration: f32,
+    text: String,
+    color: Color,
+    size: f32,
+}
+
+struct Particle {
+    position: Vec2,
+    velocity: Vec2,
+    timer: f32,
+    duration: f32,
+    radius: f32,
+    color: Color,
+}
+
 pub struct Game {
     bird_y: f32,
     bird_vy: f32,
     pipes: Vec<Pipe>,
     collectibles: Vec<Collectible>,
     clouds: Vec<Cloud>,
+    score_popups: Vec<ScorePopup>,
+    particles: Vec<Particle>,
     score: u32,
+    high_score: u32,
+    new_high_score: bool,
     difficulty: f32,
     combo_count: u32,
     combo_timer: f32,
@@ -156,6 +191,8 @@ pub struct Game {
     boost_timer: f32,
     close_timer: f32,
     shield_flash: f32,
+    impact_flash: f32,
+    shake_timer: f32,
     ground_scroll: f32,
     game_over: bool,
     started: bool,
@@ -167,13 +204,18 @@ pub struct Game {
 
 impl Game {
     pub fn new(audio: AudioBank) -> Self {
+        let high_score = high_score::load();
         let mut game = Self {
             bird_y: SCREEN_H / 2.0,
             bird_vy: 0.0,
             pipes: Vec::new(),
             collectibles: Vec::new(),
             clouds: Vec::new(),
+            score_popups: Vec::new(),
+            particles: Vec::new(),
             score: 0,
+            high_score,
+            new_high_score: false,
             difficulty: 0.0,
             combo_count: 0,
             combo_timer: 0.0,
@@ -184,6 +226,8 @@ impl Game {
             boost_timer: 0.0,
             close_timer: 0.0,
             shield_flash: 0.0,
+            impact_flash: 0.0,
+            shake_timer: 0.0,
             ground_scroll: 0.0,
             game_over: false,
             started: false,
@@ -217,6 +261,7 @@ impl Game {
 
         self.update_clouds(dt);
         self.update_timers(dt);
+        self.update_feedback(dt);
 
         let flap = is_key_pressed(KeyCode::Space)
             || is_key_pressed(KeyCode::Up)
@@ -226,6 +271,7 @@ impl Game {
         let mut play_score = false;
         let mut play_game_over = false;
         let mut pending_score: u32 = 0;
+        let mut score_bursts: Vec<ScoreBurst> = Vec::new();
 
         let (gravity, flap_velocity, max_fall) = if self.power_kind == Some(PowerKind::Feather) {
             (GRAVITY * 0.55, FLAP_VELOCITY * 0.9, 320.0)
@@ -240,7 +286,7 @@ impl Game {
                 self.bird_vy = flap_velocity;
                 play_flap = true;
             }
-            if play_flap {
+            if play_flap && !self.muted {
                 self.audio.play_flap();
             }
             return;
@@ -274,7 +320,7 @@ impl Game {
 
         if self.bird_y + BIRD_RADIUS >= ground_y {
             self.bird_y = ground_y - BIRD_RADIUS;
-            self.game_over = true;
+            self.finish_run(vec2(BIRD_X, self.bird_y));
             play_game_over = true;
         }
 
@@ -293,10 +339,20 @@ impl Game {
 
         if !self.game_over {
             let mut bird_pos = vec2(BIRD_X, self.bird_y);
+            let mut hit_position: Option<Vec2> = None;
             for pipe in &mut self.pipes {
                 let (top, bottom) = pipe.rects();
-                let collided = physics::circle_rect_collision(bird_pos, BIRD_RADIUS, top)
-                    || physics::circle_rect_collision(bird_pos, BIRD_RADIUS, bottom);
+                let collided = physics::circle_rect_collision(
+                    bird_pos.x,
+                    bird_pos.y,
+                    BIRD_RADIUS,
+                    RectBounds::new(top.x, top.y, top.w, top.h),
+                ) || physics::circle_rect_collision(
+                    bird_pos.x,
+                    bird_pos.y,
+                    BIRD_RADIUS,
+                    RectBounds::new(bottom.x, bottom.y, bottom.w, bottom.h),
+                );
                 if collided {
                     if self.power_kind == Some(PowerKind::Shield) {
                         self.power_kind = None;
@@ -306,8 +362,7 @@ impl Game {
                         self.bird_vy = 0.0;
                         bird_pos.y = self.bird_y;
                     } else {
-                        self.game_over = true;
-                        play_game_over = true;
+                        hit_position = Some(bird_pos);
                         break;
                     }
                 }
@@ -332,13 +387,34 @@ impl Game {
                     };
                     let points = (1 + flow_bonus).saturating_mul(multiplier);
                     pending_score = pending_score.saturating_add(points);
+                    let label = if perfect {
+                        format!("Perfect +{}", points)
+                    } else {
+                        format!("+{}", points)
+                    };
+                    score_bursts.push(ScoreBurst {
+                        position: vec2(BIRD_X + 42.0, self.bird_y - 18.0),
+                        text: label,
+                        color: if perfect { COLOR_FLOW } else { WHITE },
+                        particles: if perfect { 12 } else { 7 },
+                    });
                     if close_call {
                         let close_points = CLOSE_BONUS.saturating_mul(multiplier);
                         pending_score = pending_score.saturating_add(close_points);
                         self.close_timer = CLOSE_FLASH_DURATION;
+                        score_bursts.push(ScoreBurst {
+                            position: vec2(BIRD_X + 44.0, self.bird_y + 12.0),
+                            text: format!("Close +{}", close_points),
+                            color: COLOR_BOOST,
+                            particles: 8,
+                        });
                     }
                     play_score = true;
                 }
+            }
+            if let Some(position) = hit_position {
+                self.finish_run(position);
+                play_game_over = true;
             }
         }
 
@@ -374,6 +450,12 @@ impl Game {
                             };
                             let points = bonus.saturating_mul(multiplier);
                             pending_score = pending_score.saturating_add(points);
+                            score_bursts.push(ScoreBurst {
+                                position: item_pos + vec2(0.0, -16.0),
+                                text: format!("Star +{}", points),
+                                color: COLOR_STAR,
+                                particles: 12,
+                            });
                             play_score = true;
                         }
                         CollectibleKind::Feather => {
@@ -386,6 +468,12 @@ impl Game {
                             };
                             let points = 1u32.saturating_mul(multiplier);
                             pending_score = pending_score.saturating_add(points);
+                            score_bursts.push(ScoreBurst {
+                                position: item_pos + vec2(0.0, -16.0),
+                                text: format!("Feather +{}", points),
+                                color: COLOR_FEATHER,
+                                particles: 9,
+                            });
                             play_score = true;
                         }
                         CollectibleKind::Shield => {
@@ -398,6 +486,12 @@ impl Game {
                             };
                             let points = 1u32.saturating_mul(multiplier);
                             pending_score = pending_score.saturating_add(points);
+                            score_bursts.push(ScoreBurst {
+                                position: item_pos + vec2(0.0, -16.0),
+                                text: format!("Shield +{}", points),
+                                color: COLOR_SHIELD,
+                                particles: 10,
+                            });
                             play_score = true;
                         }
                         CollectibleKind::Boost => {
@@ -409,6 +503,12 @@ impl Game {
                             };
                             let points = 1u32.saturating_mul(multiplier);
                             pending_score = pending_score.saturating_add(points);
+                            score_bursts.push(ScoreBurst {
+                                position: item_pos + vec2(0.0, -16.0),
+                                text: format!("Boost +{}", points),
+                                color: COLOR_BOOST,
+                                particles: 14,
+                            });
                             play_score = true;
                         }
                     }
@@ -422,22 +522,20 @@ impl Game {
 
         if pending_score > 0 {
             self.score = self.score.saturating_add(pending_score);
+            for burst in score_bursts {
+                self.spawn_score_burst(burst);
+            }
+            self.record_high_score(vec2(SCREEN_W * 0.5, 96.0));
         }
 
-        if play_flap {
-            if !self.muted {
-                self.audio.play_flap();
-            }
+        if play_flap && !self.muted {
+            self.audio.play_flap();
         }
-        if play_score {
-            if !self.muted {
-                self.audio.play_score();
-            }
+        if play_score && !self.muted {
+            self.audio.play_score();
         }
-        if play_game_over {
-            if !self.muted {
-                self.audio.play_game_over();
-            }
+        if play_game_over && !self.muted {
+            self.audio.play_game_over();
         }
     }
 
@@ -457,6 +555,7 @@ impl Game {
         for collectible in &self.collectibles {
             self.draw_collectible(collectible, time);
         }
+        self.draw_particles();
 
         let bird_pos = vec2(BIRD_X, self.bird_y);
         self.draw_power_aura(bird_pos, time);
@@ -464,6 +563,7 @@ impl Game {
 
         let ground_y = SCREEN_H - GROUND_H;
         self.draw_ground(ground_y);
+        self.draw_impact_flash(time);
 
         let score_text = format!("{}", self.score);
         let font_size = 36.0;
@@ -475,6 +575,8 @@ impl Game {
             font_size,
             WHITE,
         );
+        self.draw_high_score(time);
+        self.draw_score_popups(time);
 
         if self.combo_count >= 2 && self.combo_timer > 0.0 {
             let combo_text = format!("Combo x{}", self.combo_count);
@@ -551,14 +653,137 @@ impl Game {
         }
 
         if self.game_over {
-            self.draw_centered_text("Game Over", SCREEN_H / 2.0 - 20.0, 40.0);
-            self.draw_centered_text("Press R to Restart", SCREEN_H / 2.0 + 24.0, 24.0);
+            self.draw_centered_text("Game Over", SCREEN_H / 2.0 - 92.0, 40.0);
+            self.draw_medal(time, SCREEN_H / 2.0 - 40.0);
+            let summary = format!("Score {}   Best {}", self.score, self.high_score);
+            self.draw_centered_text_color(&summary, SCREEN_H / 2.0 + 30.0, 22.0, WHITE);
+            if self.new_high_score {
+                let pulse = (time * 5.0).sin() * 0.5 + 0.5;
+                let color = lerp_color(COLOR_COMBO, WHITE, pulse * 0.35);
+                self.draw_centered_text_color("New Best", SCREEN_H / 2.0 + 58.0, 24.0, color);
+                self.draw_centered_text("Press R to Restart", SCREEN_H / 2.0 + 92.0, 22.0);
+            } else {
+                self.draw_centered_text("Press R to Restart", SCREEN_H / 2.0 + 78.0, 22.0);
+            }
         }
     }
 
     fn draw_centered_text(&self, text: &str, y: f32, size: f32) {
+        self.draw_centered_text_color(text, y, size, WHITE);
+    }
+
+    fn draw_centered_text_color(&self, text: &str, y: f32, size: f32, color: Color) {
         let measure = measure_text(text, None, size as u16, 1.0);
-        draw_text(text, (SCREEN_W - measure.width) / 2.0, y, size, WHITE);
+        draw_text(text, (SCREEN_W - measure.width) / 2.0, y, size, color);
+    }
+
+    fn draw_high_score(&self, time: f32) {
+        let best_text = format!("Best {}", self.high_score);
+        let size = 18.0;
+        let measure = measure_text(&best_text, None, size as u16, 1.0);
+        let color = if self.new_high_score {
+            let pulse = (time * 5.0).sin() * 0.5 + 0.5;
+            lerp_color(COLOR_COMBO, WHITE, pulse * 0.25)
+        } else {
+            with_alpha(WHITE, 0.82)
+        };
+        draw_text(
+            &best_text,
+            (SCREEN_W - measure.width) / 2.0,
+            76.0,
+            size,
+            color,
+        );
+    }
+
+    fn draw_score_popups(&self, time: f32) {
+        for popup in &self.score_popups {
+            let t = (popup.timer / popup.duration).clamp(0.0, 1.0);
+            let alpha = (1.0 - t).powf(0.65);
+            let pulse = (time * 8.0 + popup.position.x * 0.02).sin() * 0.5 + 0.5;
+            let size = popup.size + 3.0 * (1.0 - t) + pulse * 1.2;
+            let measure = measure_text(&popup.text, None, size as u16, 1.0);
+            let x = popup.position.x - measure.width * 0.5;
+            let y = popup.position.y;
+            draw_text(
+                &popup.text,
+                x + 1.5,
+                y + 1.5,
+                size,
+                Color::new(0.0, 0.0, 0.0, 0.28 * alpha),
+            );
+            draw_text(&popup.text, x, y, size, with_alpha(popup.color, alpha));
+        }
+    }
+
+    fn draw_particles(&self) {
+        for particle in &self.particles {
+            let t = (particle.timer / particle.duration).clamp(0.0, 1.0);
+            let alpha = (1.0 - t).powf(1.2);
+            let radius = particle.radius * (1.0 - 0.35 * t);
+            draw_circle(
+                particle.position.x,
+                particle.position.y,
+                radius,
+                with_alpha(particle.color, alpha),
+            );
+        }
+    }
+
+    fn draw_impact_flash(&self, time: f32) {
+        if self.impact_flash > 0.0 {
+            let t = (self.impact_flash / IMPACT_FLASH_DURATION).clamp(0.0, 1.0);
+            draw_rectangle(
+                0.0,
+                0.0,
+                SCREEN_W,
+                SCREEN_H,
+                Color::new(1.0, 1.0, 1.0, 0.12 * t),
+            );
+        }
+
+        if self.shake_timer > 0.0 {
+            let t = (self.shake_timer / SCREEN_SHAKE_DURATION).clamp(0.0, 1.0);
+            let offset = self.shake_offset(time);
+            draw_circle_lines(
+                BIRD_X + offset.x,
+                self.bird_y + offset.y,
+                BIRD_RADIUS + 12.0 + (1.0 - t) * 20.0,
+                2.0,
+                with_alpha(WHITE, 0.35 * t),
+            );
+        }
+    }
+
+    fn draw_medal(&self, time: f32, y: f32) {
+        let (label, color) = medal_for_score(self.score);
+        let x = SCREEN_W * 0.5;
+        let pulse = if self.new_high_score {
+            (time * 6.0).sin() * 0.5 + 0.5
+        } else {
+            0.0
+        };
+        let radius = 22.0 + pulse * 2.0;
+
+        draw_triangle(
+            vec2(x - 10.0, y + 14.0),
+            vec2(x - 2.0, y + 42.0),
+            vec2(x + 2.0, y + 14.0),
+            with_alpha(color, 0.55),
+        );
+        draw_triangle(
+            vec2(x + 10.0, y + 14.0),
+            vec2(x + 2.0, y + 42.0),
+            vec2(x - 2.0, y + 14.0),
+            with_alpha(color, 0.38),
+        );
+        draw_circle(x, y, radius + 4.0, with_alpha(BLACK, 0.25));
+        draw_circle(x, y, radius, color);
+        draw_circle_lines(x, y, radius - 4.0, 2.0, with_alpha(WHITE, 0.5));
+        draw_circle(x - 7.0, y - 7.0, radius * 0.22, with_alpha(WHITE, 0.35));
+
+        let text = format!("Medal: {}", label);
+        self.draw_centered_text_color(&text, y + 58.0, 20.0, color);
     }
 
     fn draw_status_hints(&self) {
@@ -641,8 +866,8 @@ impl Game {
             for col in 0..cols {
                 let x = rect.x + col as f32 * PIPE_PIXEL_SIZE;
                 let y = rect.y + row as f32 * PIPE_PIXEL_SIZE;
-                let w = (rect.x + rect.w - x).min(PIPE_PIXEL_SIZE).max(0.0);
-                let h = (rect.y + rect.h - y).min(PIPE_PIXEL_SIZE).max(0.0);
+                let w = (rect.x + rect.w - x).clamp(0.0, PIPE_PIXEL_SIZE);
+                let h = (rect.y + rect.h - y).clamp(0.0, PIPE_PIXEL_SIZE);
                 if w <= 0.0 || h <= 0.0 {
                     continue;
                 }
@@ -700,8 +925,8 @@ impl Game {
             for col in 0..cap_cols {
                 let x = cap_x + col as f32 * PIPE_PIXEL_SIZE;
                 let y = cap_y + row as f32 * PIPE_PIXEL_SIZE;
-                let w = (cap_x + cap_w - x).min(PIPE_PIXEL_SIZE).max(0.0);
-                let h = (cap_y + cap_h - y).min(PIPE_PIXEL_SIZE).max(0.0);
+                let w = (cap_x + cap_w - x).clamp(0.0, PIPE_PIXEL_SIZE);
+                let h = (cap_y + cap_h - y).clamp(0.0, PIPE_PIXEL_SIZE);
                 if w <= 0.0 || h <= 0.0 {
                     continue;
                 }
@@ -808,6 +1033,105 @@ impl Game {
         }
     }
 
+    fn finish_run(&mut self, position: Vec2) {
+        if self.game_over {
+            return;
+        }
+
+        self.game_over = true;
+        self.impact_flash = IMPACT_FLASH_DURATION;
+        self.shake_timer = SCREEN_SHAKE_DURATION;
+        self.record_high_score(vec2(SCREEN_W * 0.5, SCREEN_H * 0.5 - 118.0));
+        self.spawn_score_burst(ScoreBurst {
+            position,
+            text: "Impact".to_string(),
+            color: COLOR_BOOST,
+            particles: 18,
+        });
+    }
+
+    fn record_high_score(&mut self, position: Vec2) {
+        if self.score <= self.high_score {
+            return;
+        }
+
+        self.high_score = self.score;
+        high_score::save(self.high_score);
+        if !self.new_high_score {
+            self.new_high_score = true;
+            self.spawn_score_burst(ScoreBurst {
+                position,
+                text: "New Best".to_string(),
+                color: COLOR_COMBO,
+                particles: 20,
+            });
+        }
+    }
+
+    fn spawn_score_burst(&mut self, burst: ScoreBurst) {
+        self.score_popups.push(ScorePopup {
+            position: burst.position,
+            velocity: vec2(rand::gen_range(-8.0, 8.0), -42.0),
+            timer: 0.0,
+            duration: SCORE_POPUP_DURATION,
+            text: burst.text,
+            color: burst.color,
+            size: 18.0,
+        });
+
+        for _ in 0..burst.particles {
+            let angle = rand::gen_range(0.0, std::f32::consts::TAU);
+            let speed = rand::gen_range(40.0, 130.0);
+            let velocity = vec2(angle.cos() * speed, angle.sin() * speed - 25.0);
+            self.particles.push(Particle {
+                position: burst.position,
+                velocity,
+                timer: 0.0,
+                duration: PARTICLE_DURATION + rand::gen_range(-0.12, 0.18),
+                radius: rand::gen_range(1.8, 3.8),
+                color: burst.color,
+            });
+        }
+    }
+
+    fn update_feedback(&mut self, dt: f32) {
+        for popup in &mut self.score_popups {
+            popup.timer += dt;
+            popup.position += popup.velocity * dt;
+            popup.velocity.y += 24.0 * dt;
+        }
+        self.score_popups
+            .retain(|popup| popup.timer < popup.duration);
+
+        for particle in &mut self.particles {
+            particle.timer += dt;
+            particle.position += particle.velocity * dt;
+            particle.velocity.y += 95.0 * dt;
+            particle.velocity *= 0.985;
+        }
+        self.particles
+            .retain(|particle| particle.timer < particle.duration);
+
+        if self.impact_flash > 0.0 {
+            self.impact_flash = (self.impact_flash - dt).max(0.0);
+        }
+        if self.shake_timer > 0.0 {
+            self.shake_timer = (self.shake_timer - dt).max(0.0);
+        }
+    }
+
+    fn shake_offset(&self, time: f32) -> Vec2 {
+        if self.shake_timer <= 0.0 {
+            return Vec2::ZERO;
+        }
+
+        let strength = (self.shake_timer / SCREEN_SHAKE_DURATION).clamp(0.0, 1.0) * 5.0;
+        vec2(
+            (time * 90.0).sin() * strength,
+            (time * 127.0).cos() * strength,
+        )
+    }
+
     fn update_timers(&mut self, dt: f32) {
         if self.combo_timer > 0.0 {
             self.combo_timer -= dt;
@@ -884,7 +1208,7 @@ impl Game {
     fn rightmost_gap_y(&self) -> Option<f32> {
         let mut rightmost: Option<&Pipe> = None;
         for pipe in &self.pipes {
-            if rightmost.map_or(true, |current| pipe.x > current.x) {
+            if rightmost.is_none_or(|current| pipe.x > current.x) {
                 rightmost = Some(pipe);
             }
         }
@@ -1249,7 +1573,10 @@ impl Game {
         self.bird_vy = 0.0;
         self.pipes.clear();
         self.collectibles.clear();
+        self.score_popups.clear();
+        self.particles.clear();
         self.score = 0;
+        self.new_high_score = false;
         self.difficulty = 0.0;
         self.combo_count = 0;
         self.combo_timer = 0.0;
@@ -1260,6 +1587,8 @@ impl Game {
         self.boost_timer = 0.0;
         self.close_timer = 0.0;
         self.shield_flash = 0.0;
+        self.impact_flash = 0.0;
+        self.shake_timer = 0.0;
         self.ground_scroll = 0.0;
         self.game_over = false;
         self.started = false;
@@ -1367,6 +1696,20 @@ impl Game {
     }
 }
 
+fn medal_for_score(score: u32) -> (&'static str, Color) {
+    if score >= 60 {
+        ("Ace", COLOR_SHIELD)
+    } else if score >= 35 {
+        ("Gold", COLOR_COMBO)
+    } else if score >= 18 {
+        ("Silver", COLOR_PLANE_LIGHT)
+    } else if score >= 8 {
+        ("Bronze", Color::new(0.76, 0.46, 0.24, 1.0))
+    } else {
+        ("Rookie", COLOR_PLANE_DARK)
+    }
+}
+
 fn rotate_vec(point: Vec2, angle: f32) -> Vec2 {
     let (sin, cos) = angle.sin_cos();
     vec2(point.x * cos - point.y * sin, point.x * sin + point.y * cos)
@@ -1413,5 +1756,5 @@ fn sky_palette(time: f32, flow: u32) -> (Color, Color, f32, f32) {
 }
 
 fn pseudo_rand(seed: f32) -> f32 {
-    (seed.sin() * 43758.5453).abs().fract()
+    (seed.sin() * 43_758.547).abs().fract()
 }

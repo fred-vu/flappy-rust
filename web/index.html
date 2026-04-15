@@ -51,6 +51,27 @@
 
     <script src="https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js"></script>
     <script>
+      miniquad_add_plugin({
+        name: "flappy_storage",
+        version: 1,
+        register_plugin(importObject) {
+          const key = "flappy_rust_high_score";
+          importObject.env.flappy_high_score_load = () => {
+            try {
+              const value = window.localStorage.getItem(key);
+              return Number.parseInt(value || "0", 10) || 0;
+            } catch (_) {
+              return 0;
+            }
+          };
+          importObject.env.flappy_high_score_save = (score) => {
+            try {
+              window.localStorage.setItem(key, String(score >>> 0));
+            } catch (_) {}
+          };
+        },
+      });
+
       load("flappy_rust.wasm");
       window.addEventListener("load", () => {
         const canvas = document.getElementById("glcanvas");
