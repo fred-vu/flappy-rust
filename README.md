@@ -4,6 +4,10 @@ A complete, lightweight Flappy Bird style game written in Rust with macroquad. T
 
 [![Deploy GitHub Pages](https://github.com/fred-vu/flappy-rust/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/fred-vu/flappy-rust/actions/workflows/deploy-pages.yml)
 
+<p align="center">
+  <img src="public/cover.png" alt="Flappy Rust cover image" width="720">
+</p>
+
 ## Demo Webapp
 
 - https://fred-vu.github.io/flappy-rust/
